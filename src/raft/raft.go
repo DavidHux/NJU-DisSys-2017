@@ -49,6 +49,13 @@ type Raft struct {
 	// Your data here.
 	// Look at the paper's Figure 2 for a description of what
 	// state a Raft server must maintain.
+	CurrentTerm     int
+	VoteFor			int
+	CommitIndex 	int
+	LastAplied		int
+	NextIndex		[]int
+	MatchIndex 		[]int
+	state			int //0: follower 1: candidate 2: leader
 
 }
 
@@ -59,6 +66,8 @@ func (rf *Raft) GetState() (int, bool) {
 	var term int
 	var isleader bool
 	// Your code here.
+	term = rf.CurrentTerm
+	isleader = rf.state == 2
 	return term, isleader
 }
 
@@ -98,6 +107,10 @@ func (rf *Raft) readPersist(data []byte) {
 //
 type RequestVoteArgs struct {
 	// Your data here.
+	Term         int
+	CandidateId  int
+	LastLogIndex int
+	LastLogTerm  int
 }
 
 //
@@ -105,6 +118,22 @@ type RequestVoteArgs struct {
 //
 type RequestVoteReply struct {
 	// Your data here.
+	Term         int
+	VoteGranted  bool
+}
+
+type RequestAppendEntriesArgs struct {
+	Term         int
+	LeaderId	 int
+	PrevLogIndex int
+	PrevLogTerm  int
+	Entries      int
+	LeaderCommit int	
+}
+
+type RequestAppendEntriesReply struct {
+	Term 		 int
+	Success      bool
 }
 
 //
@@ -112,6 +141,36 @@ type RequestVoteReply struct {
 //
 func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here.
+	if args.Term < rf.CurrentTerm {
+		reply.VoteGranted = false
+		return
+	}
+	if (rf.VoteFor == nil || rf.VoteFor == args.CandidateId) && args.LastLogIndex >= len(rf.log){
+		reply.VoteGranted = true
+		return
+	}
+}
+
+func (rf *Raft) RequestAppendEntries(args RequestAppendEntriesArgs, reply *RequestAppendEntriesReply){
+	if args.Term < rf.CurrentTerm {
+		reply.Success = false
+		reply.Term = rf.CurrentTerm
+		return
+	}
+	if /*log doesn't contain an entry at prevlofindex whose term matches prevlogterm*/ {
+		reply.Success = false
+		return
+	}
+	// if an existing entry conflicts with a new one (same index but different terms). 
+	// delete the existing entry and all that follow it 
+	if {
+
+	}
+	// append any new entries not already in the log
+
+	// if leaderCommit > commitIndex, set commitIndex - min(leaderCommit, index of last new entry)
+
+	return
 }
 
 //
