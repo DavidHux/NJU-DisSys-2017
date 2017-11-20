@@ -19,6 +19,12 @@ package raft
 
 import "sync"
 import "labrpc"
+import {
+	"net/rpc"
+    "net"
+	"os"
+	"time"
+}
 
 // import "bytes"
 // import "encoding/gob"
@@ -50,12 +56,19 @@ type Raft struct {
 	// Look at the paper's Figure 2 for a description of what
 	// state a Raft server must maintain.
 	CurrentTerm     int
+	// VoteFor should be -1 when it is not a candidate or not vote for anyone
 	VoteFor			int
 	CommitIndex 	int
-	LastAplied		int
+	LastApplied		int
+	// listen from leader index, initial to 0
+	LeaderApplied	int
+	SelfApplyIndex  int
 	NextIndex		[]int
 	MatchIndex 		[]int
 	state			int //0: follower 1: candidate 2: leader
+	// when it is a candidate, its reply is here 
+	ReqForVoteReply []*RequestVoteReply
+	ReqVoteBool     []bool
 
 }
 
@@ -245,12 +258,78 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.peers = peers
 	rf.persister = persister
 	rf.me = me
+	
+	// initial request for vote 
+	rf.ReqForVoteReply = []*RequestVoteReply{}
+	rf.ReqVoteBool = [len(peers)]bool{false}
+	for i:=0; i < len(peers); i++ {
+		Replyy:= new(RequestVoteReply)
+		Replyy.VoteGranted = false
+		Replyy.Term = -1
+		rf.ReqForVoteReply = append(rf.ReqForVoteReply, Replyy)
+	}
 
 	// Your initialization code here.
+	// end.Call("Raft.AppendEntries", &args, &reply)
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 
 
 	return rf
+}
+
+func (rf *Raft) keepAlive() bool {
+	// for all servers:1. increment lastApplied, apply log[lastApplied] to state machine
+	// 2. if rpc request or response contains term T > currentTermm convert to follower.
+
+	// for follower
+	if rf.state == 0 {
+		if rf.SelfApplyIndex > rf.LeaderApplied && rf.VoteFor == -1 {
+			rf.state = 1
+			rf.VoteFor = rf.me
+			rf.CurrentTerm = 1 + rf.CurrentTerm
+			rf.RequestForVote()
+		}
+	}
+	if rf.state == 1 {
+		count := 0
+		for i := range len(rf.peers) {
+			if i != rf.me {
+				if rf.ReqVoteBool[i] == true && rf.ReqForVoteReply[i].VoteGranted == true {
+					count ++
+				}
+			}
+		}
+		if count * 2 > len(peers){
+			rf.state = 2
+		} else {
+			rf.VoteFor = rf.me
+			rf.CurrentTerm = 1 + rf.CurrentTerm
+			rf.RequestForVote()
+		}
+	}
+	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
+	return ok
+}
+// type RequestVoteArgs struct {
+// 	// Your data here.
+// 	Term         int
+// 	CandidateId  int
+// 	LastLogIndex int
+// 	LastLogTerm  int
+// }
+func (rf *Raft) RequestForVote(){
+	rf.clearVote()
+	args := RequestVoteArgs{rf.CurrentTerm, rf.me, rf.LastLogIndex, rf.LastLogTerm}
+	for i:=0; i < len(rf.peers); i++ {
+		if i != rf.me {
+			rf.ReqVoteBool[i] = rf.sendRequestVote(i, args, rf.ReqForVoteReply[i])
+		}
+	}
+}
+func (rf *Raft) clearVote(){
+	for i := range len(rf.peers){
+		rf.ReqVoteBool[i] = false
+	}
 }
